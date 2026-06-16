@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Place the Pin — Medieval Geography Game</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Georgia', serif; background: #1a1208; color: #e8d5a3; min-height: 100vh; display: flex; flex-direction: column; }
+
+  header {
+    background: #2c1e0a;
+    border-bottom: 2px solid #8b6914;
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { font-size: 1.4rem; color: #f0c040; letter-spacing: 1px; }
+  #progress-bar {
+    flex: 1; height: 10px; background: #3a2a10; border-radius: 5px; overflow: hidden;
+    border: 1px solid #8b6914;
+  }
+  #progress-fill { height: 100%; background: linear-gradient(90deg, #8b6914, #f0c040); width: 0%; transition: width 0.5s; }
+
+  #main { display: flex; flex: 1; height: calc(100vh - 60px); }
+
+  #sidebar {
+    width: 300px; min-width: 300px; background: #231608;
+    border-right: 2px solid #8b6914;
+    display: flex; flex-direction: column; padding: 20px; gap: 16px;
+    overflow-y: auto;
+  }
+
+  #place-name {
+    font-size: 2rem; font-weight: bold; color: #f0c040;
+    text-align: center; text-transform: capitalize;
+    letter-spacing: 1px; line-height: 1.2;
+    min-height: 3rem;
+  }
+  #place-name span { display: block; font-size: 0.85rem; color: #a89060; font-weight: normal; margin-top: 6px; }
+
+  #instructions {
+    color: #c8aa70; font-size: 0.9rem; text-align: center;
+    background: #2c1e0a; border: 1px solid #5a4010; border-radius: 6px; padding: 10px;
+  }
+
+  #confirm-btn {
+    background: linear-gradient(135deg, #8b6914, #f0c040);
+    color: #1a1208; font-size: 1rem; font-weight: bold;
+    border: none; border-radius: 6px; padding: 12px;
+    cursor: pointer; letter-spacing: 1px;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  #confirm-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  #confirm-btn:not(:disabled):hover { opacity: 0.9; transform: translateY(-1px); }
+
+  #feedback {
+    background: #2c1e0a; border: 1px solid #5a4010; border-radius: 6px;
+    padding: 12px; font-size: 0.95rem; text-align: center;
+    display: none;
+  }
+  #feedback .dist { font-size: 1.5rem; font-weight: bold; color: #f0c040; }
+  #feedback .pts { font-size: 1.1rem; color: #7ded7d; margin-top: 4px; }
+
+  #score-display {
+    text-align: center; font-size: 1.1rem; color: #c8aa70;
+  }
+  #score-display strong { color: #f0c040; font-size: 1.4rem; }
+  #player-label { text-align: center; font-size: 0.85rem; color: #8a7040; }
+
+  #round-display { text-align: center; font-size: 0.85rem; color: #8a7040; }
+
+  #next-btn {
+    background: #2c3e20; color: #7ded7d; border: 1px solid #4a8030;
+    border-radius: 6px; padding: 10px; font-size: 0.95rem; font-weight: bold;
+    cursor: pointer; display: none;
+    transition: background 0.2s;
+  }
+  #next-btn:hover { background: #3a5028; }
+
+  /* ── Name entry overlay ── */
+  #name-entry {
+    display: flex;
+    position: fixed; inset: 0; background: rgba(10,8,2,0.97);
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 24px; z-index: 2000; padding: 30px;
+  }
+  #name-entry h2 { font-size: 2rem; color: #f0c040; text-align: center; }
+  #name-entry p { color: #c8aa70; text-align: center; max-width: 380px; line-height: 1.5; }
+  #name-input {
+    background: #2c1e0a; border: 2px solid #8b6914; border-radius: 8px;
+    color: #f0c040; font-size: 1.3rem; font-family: 'Georgia', serif;
+    padding: 12px 20px; text-align: center; width: min(320px, 90vw);
+    outline: none;
+  }
+  #name-input:focus { border-color: #f0c040; }
+  #name-input::placeholder { color: #5a4010; }
+  #start-btn {
+    background: linear-gradient(135deg, #8b6914, #f0c040);
+    color: #1a1208; font-size: 1.1rem; font-weight: bold;
+    border: none; border-radius: 8px; padding: 14px 36px;
+    cursor: pointer; letter-spacing: 1px;
+    transition: opacity 0.2s;
+  }
+  #start-btn:hover { opacity: 0.88; }
+  #start-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* leaderboard preview in name entry */
+  #lb-preview { width: min(420px, 92vw); }
+  #lb-preview h3 { color: #f0c040; font-size: 1rem; text-align: center; margin-bottom: 8px; letter-spacing: 1px; }
+  #lb-preview table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  #lb-preview td, #lb-preview th { border: 1px solid #5a4010; padding: 6px 10px; text-align: left; }
+  #lb-preview th { background: #2c1e0a; color: #f0c040; }
+  #lb-preview tr:nth-child(even) td { background: #1e1508; }
+  .lb-medal { font-size: 1rem; }
+
+  /* ── Results screen ── */
+  #results {
+    display: none;
+    position: fixed; inset: 0; background: rgba(10,8,2,0.95);
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; z-index: 1000; padding: 30px; overflow-y: auto;
+  }
+  #results.show { display: flex; }
+  #results h2 { font-size: 2rem; color: #f0c040; }
+  #results .player-name-result { font-size: 1.1rem; color: #a89060; }
+  #results .final-score { font-size: 3rem; color: #f0c040; font-weight: bold; }
+  #results .grade { font-size: 1.4rem; color: #c8aa70; }
+  #results table { border-collapse: collapse; width: min(500px, 90vw); }
+  #results td, #results th { border: 1px solid #5a4010; padding: 8px 12px; text-align: left; }
+  #results th { background: #2c1e0a; color: #f0c040; }
+  #results tr:nth-child(even) td { background: #1e1508; }
+
+  .result-btns { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+  .result-btns button {
+    font-family: 'Georgia', serif;
+    border-radius: 8px; padding: 12px 24px;
+    font-size: 1rem; font-weight: bold; cursor: pointer;
+    transition: opacity 0.2s;
+    border: none;
+  }
+  .result-btns button:hover { opacity: 0.85; }
+  #play-again-btn { background: linear-gradient(135deg, #8b6914, #f0c040); color: #1a1208; }
+  #view-lb-btn { background: #2c3e20; color: #7ded7d; border: 1px solid #4a8030 !important; border: none; }
+
+  /* ── Full leaderboard overlay ── */
+  #leaderboard {
+    display: none;
+    position: fixed; inset: 0; background: rgba(10,8,2,0.97);
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 20px; z-index: 3000; padding: 30px; overflow-y: auto;
+  }
+  #leaderboard.show { display: flex; }
+  #leaderboard h2 { font-size: 2rem; color: #f0c040; letter-spacing: 1px; }
+  #leaderboard table { border-collapse: collapse; width: min(560px, 92vw); font-size: 0.95rem; }
+  #leaderboard td, #leaderboard th { border: 1px solid #5a4010; padding: 9px 14px; text-align: left; }
+  #leaderboard th { background: #2c1e0a; color: #f0c040; }
+  #leaderboard tr:nth-child(even) td { background: #1e1508; }
+  #leaderboard .current-player td { background: #1e2e10 !important; color: #7ded7d; }
+  #lb-close-btn {
+    background: #2c1e0a; color: #c8aa70; border: 1px solid #5a4010;
+    border-radius: 8px; padding: 11px 28px; font-size: 1rem;
+    font-family: 'Georgia', serif; cursor: pointer;
+    transition: background 0.2s;
+  }
+  #lb-close-btn:hover { background: #3a2a10; }
+  #clear-lb-btn {
+    background: transparent; color: #5a4010; border: 1px solid #3a2a10;
+    border-radius: 6px; padding: 6px 14px; font-size: 0.8rem;
+    font-family: 'Georgia', serif; cursor: pointer;
+  }
+  #clear-lb-btn:hover { color: #c86060; border-color: #c86060; }
+
+  #map { flex: 1; }
+  .guess-pin { background: #f0c040; width: 16px; height: 16px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid #1a1208; }
+  .answer-pin { background: #7ded7d; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #1a1208; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📍 Place the Pin</h1>
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+  <span id="round-label" style="color:#8a7040;font-size:0.85rem;white-space:nowrap">Round 1 / 5</span>
+</header>
+
+<!-- Name entry -->
+<div id="name-entry">
+  <h2>📍 Place the Pin</h2>
+  <p>Test your knowledge of the medieval Mediterranean, Indian Ocean, and Silk Road — the world of the Cairo Geniza merchants.</p>
+  <input id="name-input" type="text" maxlength="24" placeholder="Enter your name…" autocomplete="off"/>
+  <button id="start-btn" disabled>Begin Game →</button>
+  <div id="lb-preview"></div>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div id="round-display">Question <strong id="q-num">1</strong> of 5</div>
+    <div id="player-label"></div>
+    <div id="place-name">—<span>Click the map to place your guess</span></div>
+    <div id="instructions">Click anywhere on the map to drop your pin, then press <strong>Confirm</strong>.</div>
+    <div id="score-display">Score: <strong id="total-score">0</strong></div>
+    <button id="confirm-btn" disabled>Confirm Guess</button>
+    <div id="feedback"></div>
+    <button id="next-btn">Next Place →</button>
+  </div>
+  <div id="map"></div>
+</div>
+
+<!-- Per-game results -->
+<div id="results">
+  <h2>🏛️ Game Over</h2>
+  <div class="player-name-result" id="result-player-name"></div>
+  <div class="final-score" id="final-score-val">0</div>
+  <div class="grade" id="grade-text"></div>
+  <table>
+    <thead><tr><th>Place</th><th>Distance</th><th>Points</th></tr></thead>
+    <tbody id="results-tbody"></tbody>
+  </table>
+  <div class="result-btns">
+    <button id="view-lb-btn">🏆 Leaderboard</button>
+    <button id="play-again-btn">Play Again</button>
+  </div>
+</div>
+
+<!-- Full leaderboard -->
+<div id="leaderboard">
+  <h2>🏆 Leaderboard</h2>
+  <table>
+    <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Grade</th><th>Date</th></tr></thead>
+    <tbody id="lb-tbody"></tbody>
+  </table>
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center">
+    <button id="lb-close-btn">← Back</button>
+    <button id="clear-lb-btn">Clear leaderboard</button>
+  </div>
+</div>
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────────
+const RAW = `latitude,longitude,notes,slug
+37.5630,14.2760,,castrogiovanni
+12.0450,75.5100,,jurbattan
+12.7912,44.9855,,aden
+33.3500,44.3400,,baghdad
+30.1318,9.4951,,ghadames
+30.0050,31.2375,,fustat
+30.7100,31.2400,,minyat-zifta
+45.4371,12.3326,,venice
+21.7000,72.9900,,bharuch
+31.9493,5.3250,,warjalan
+30.9700,31.1600,,al-mahalla-al-kubra
+31.5294,35.0938,,hebron
+10.2200,76.2200,,shingli
+51.5099,-0.1181,,london
+43.3186,11.3306,,siena
+31.2000,32.2333,,tinnis
+31.8649,11.7933,,nafusa
+35.5138,24.0180,,chania
+16.9880,54.6920,,mirbat
+38.4127,27.1384,,izmir
+32.7456,35.2786,,saffuriyya
+22.3308,36.4903,,aydhab
+33.8886,35.4955,,beirut
+19.1000,37.3300,,suwakin
+31.4175,31.8144,,damietta
+8.8932,76.6141,,kulam
+31.3995,30.4172,,rosetta
+30.9647,30.7666,,sa
+35.0952,33.2034,,cyprus
+36.8667,1.6167,,oarsenis
+40.6293,22.9474,,salonica
+36.2167,37.1667,,aleppo
+39.4697,-0.3774,,valencia
+34.4367,35.8343,,tripoli-lebanon
+35.6754,10.8807,,lamta
+36.7194,-4.4200,,malaga
+32.3400,43.1300,,mosul
+40.4167,-3.7030,,madrid
+30.0518,31.2616,,cairo
+12.0200,75.2800,,malibar
+41.8967,12.4822,,rome
+27.1833,31.1667,,asyut
+34.4311,8.7757,,gafsa
+29.1520,31.1316,,bush
+37.5089,22.3794,,tripoli-greece
+19.1970,72.9700,,tana
+35.3410,25.1483,,candia
+33.2705,35.2308,,tyre
+35.8950,14.5100,,malta
+31.2046,29.8801,,alexandria
+38.2440,21.7344,,patras
+39.6240,19.9201,,corfu
+33.5104,36.2783,,damascus
+41.9965,21.4314,,skopje
+32.5000,34.8917,,caesarea
+13.1280,45.3800,,zinjibar
+36.8450,-2.4522,,almeria
+36.3777,33.9344,,silifke
+36.4356,28.2220,,rhodes
+35.5000,11.0700,,al-mahdiyya
+36.2065,36.1572,,antioch
+28.5248,30.6822,,sandafa
+32.0504,34.7522,,jaffa
+31.9881,24.6089,,lukk
+41.0151,28.9795,,constantinople
+34.8800,-1.3200,,tilimsan
+38.3687,26.1372,,chios
+27.7814,30.8039,,al-ushmunayn
+32.8900,13.1900,,tarabulus-al-gharb
+29.2500,31.0800,,busir
+32.9646,35.4960,,safed
+31.6700,34.5700,,ascalon
+36.9177,34.8928,,tarsus
+34.0600,-4.9733,,fez
+37.9563,28.3416,,mastura
+34.1236,35.6519,,jubayl
+32.9278,35.0817,,acre
+30.4200,31.5600,,bilbays
+31.7767,35.2342,,jerusalem
+31.2800,-4.2800,,sijilmasa
+38.1110,13.3520,,palermo
+15.8300,40.2000,,dahlak
+25.9300,32.7700,,qus
+36.8060,10.1820,,tunis
+33.8800,10.1200,,qabis
+2.0054,98.3900,,fansur
+34.7400,10.7600,,sfax
+37.6500,12.5800,,mazara
+12.8700,74.8400,,mangaluru
+41.3870,2.1686,,barcelona
+36.3570,6.6390,,constantine
+30.6385,31.2837,,sahrajt
+28.4141,30.6870,,minbal
+28.4004,30.7258,,abwan-near-al-ushmunayn
+33.0485,35.1022,,akhziv
+35.8138,4.7933,,qal-at-hammad
+33.1672,35.3665,,jabal-amil
+34.0660,35.6682,,mu-aysira
+31.1322,33.8020,,al-arish
+30.5972,30.9876,,manufiyya
+30.8445,30.9082,,birma
+32.9782,35.5029,,birya
+36.3799,37.5150,,wadi-butnan
+32.9808,35.4917,,ayn-al-zaytun
+31.1555,29.8978,,maryut
+32.2227,35.2621,,nabulus
+30.6206,31.1576,,al-mastay
+30.0607,31.1954,,minyat-uqba
+36.9000,7.7666,,bona
+30.7867,31.0003,,tanta
+31.0406,30.4700,,damanhur
+34.8800,-1.3200,,tilimsan
+49.4437,24.9364,,berezhany
+14.4341,43.0161,,ghulayfiqa
+35.3931,11.0437,,salaqta
+31.2659,31.6272,,al-daqahliyya-region
+30.5440,31.0430,,minyat-khalaf
+26.7062,31.6045,,al-maragha
+31.2522,34.7866,,beersheba
+22.0000,39.5000,,hijaz
+45.9000,13.0000,,friuli
+30.2917,31.3211,,al-shubak
+30.5972,31.2544,,atfihna
+38.1386,14.9669,,patti
+30.7299,31.7975,,faqus
+35.8889,-5.3040,,ceuta
+23.8500,72.1250,,nahrwara
+34.4350,36.5700,,jusiya
+31.2659,31.6272,,al-daqahliyya-region
+31.1133,35.5295,,qedesh
+29.9358,31.2556,,minyat-al-shammas
+31.8282,30.8269,,al-nastarawiyya-region
+30.8829,31.3202,,shanasha
+29.8422,31.3333,,hilwan
+30.8682,31.0071,,nawaj
+14.7608,49.6069,,al-shihr
+13.5167,46.7000,,ahwar
+15.3133,48.3308,,al-sif
+38.4684,23.6259,,chalcis
+36.1408,-5.4562,,algeciras
+31.5085,-9.7595,,essaouira
+36.8969,30.7133,,antalya
+24.7534,67.5225,,daybul
+30.4058,31.4093,,dahmasha
+42.0591,48.2912,,derbent
+31.3114,30.0603,,abu-qir
+4.1753,73.5089,,maldives
+30.8829,31.3202,,shanasha
+31.1322,33.8020,,al-arish`;
+
+// Parse CSV
+const places = [];
+const lines = RAW.trim().split('\n').slice(1);
+for (const line of lines) {
+  const cols = line.split(',');
+  const lat = parseFloat(cols[0]);
+  const lon = parseFloat(cols[1]);
+  const slug = cols[cols.length - 1].trim();
+  if (!isNaN(lat) && !isNaN(lon) && slug) {
+    places.push({ lat, lon, name: slug.replace(/-/g, ' ') });
+  }
+}
+
+// ── Leaderboard storage ───────────────────────────────────────────────────────
+const LB_KEY = 'geniza_leaderboard_v1';
+
+function loadLeaderboard() {
+  try { return JSON.parse(localStorage.getItem(LB_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveLeaderboard(lb) {
+  localStorage.setItem(LB_KEY, JSON.stringify(lb));
+}
+
+function addToLeaderboard(name, score, grade) {
+  const lb = loadLeaderboard();
+  lb.push({ name, score, grade, date: new Date().toLocaleDateString() });
+  lb.sort((a, b) => b.score - a.score);
+  if (lb.length > 50) lb.length = 50; // cap at 50 entries
+  saveLeaderboard(lb);
+  return lb;
+}
+
+function getGrade(pct) {
+  if (pct >= 0.9) return '🏆 Legendary';
+  if (pct >= 0.7) return '⭐ Expert';
+  if (pct >= 0.5) return '🗺️ Seasoned';
+  if (pct >= 0.3) return '🧭 Apprentice';
+  return '🌍 Wanderer';
+}
+
+const MEDALS = ['🥇','🥈','🥉'];
+
+function renderLbTable(lb, currentName, currentScore) {
+  if (lb.length === 0) return '<tr><td colspan="5" style="text-align:center;color:#5a4010;font-style:italic">No scores yet</td></tr>';
+  return lb.map((e, i) => {
+    const isCurrent = e.name === currentName && e.score === currentScore && i === lb.findIndex(x => x.name === currentName && x.score === currentScore);
+    const medal = MEDALS[i] || (i + 1);
+    return `<tr class="${isCurrent ? 'current-player' : ''}">
+      <td>${medal}</td>
+      <td>${e.name}</td>
+      <td style="color:#f0c040;font-weight:bold">${e.score.toLocaleString()}</td>
+      <td>${e.grade}</td>
+      <td style="color:#5a4010;font-size:0.8rem">${e.date}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Name entry ────────────────────────────────────────────────────────────────
+let currentPlayerName = '';
+
+function renderLbPreview() {
+  const lb = loadLeaderboard();
+  const el = document.getElementById('lb-preview');
+  if (lb.length === 0) { el.innerHTML = ''; return; }
+  const top5 = lb.slice(0, 5);
+  el.innerHTML = `<h3>🏆 Leaderboard</h3>
+  <table>
+    <thead><tr><th>#</th><th>Player</th><th>Score</th></tr></thead>
+    <tbody>${top5.map((e, i) => `<tr>
+      <td>${MEDALS[i] || i+1}</td>
+      <td>${e.name}</td>
+      <td style="color:#f0c040">${e.score.toLocaleString()}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+const nameInput = document.getElementById('name-input');
+const startBtn = document.getElementById('start-btn');
+
+nameInput.addEventListener('input', () => {
+  startBtn.disabled = nameInput.value.trim().length === 0;
+});
+nameInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !startBtn.disabled) startBtn.click();
+});
+
+startBtn.addEventListener('click', () => {
+  currentPlayerName = nameInput.value.trim();
+  if (!currentPlayerName) return;
+  document.getElementById('name-entry').style.display = 'none';
+  document.getElementById('player-label').textContent = `Playing as: ${currentPlayerName}`;
+  chosen = pickPlaces();
+  startRound();
+});
+
+renderLbPreview();
+
+// ── Game state ────────────────────────────────────────────────────────────────
+const ROUNDS = 5;
+let round = 0;
+let totalScore = 0;
+let chosen = [];
+let guessMarker = null;
+let resultHistory = [];
+let guessed = false;
+
+function formatName(n) {
+  return n.replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function pickPlaces() {
+  const pool = [...places];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const seen = new Set();
+  const unique = [];
+  for (const p of pool) {
+    if (!seen.has(p.name)) { seen.add(p.name); unique.push(p); }
+    if (unique.length === ROUNDS) break;
+  }
+  return unique;
+}
+
+// ── Map setup ─────────────────────────────────────────────────────────────────
+const map = L.map('map', { center: [30, 25], zoom: 3 });
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains: 'abcd',
+  maxZoom: 19,
+}).addTo(map);
+
+const guessIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:18px;height:18px;background:#f0c040;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #1a1208;box-shadow:0 0 6px rgba(240,192,64,0.8)"></div>',
+  iconSize: [18, 18], iconAnchor: [9, 18],
+});
+const answerIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:16px;height:16px;background:#7ded7d;border-radius:50%;border:2px solid #1a1208;box-shadow:0 0 8px rgba(125,237,125,0.9)"></div>',
+  iconSize: [16, 16], iconAnchor: [8, 8],
+});
+
+map.on('click', e => {
+  if (guessed) return;
+  if (guessMarker) map.removeLayer(guessMarker);
+  guessMarker = L.marker(e.latlng, { icon: guessIcon }).addTo(map);
+  document.getElementById('confirm-btn').disabled = false;
+});
+
+// ── Haversine distance (km) ───────────────────────────────────────────────────
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+
+function calcScore(km) {
+  if (km < 50) return 1000;
+  if (km > 10000) return 0;
+  return Math.max(0, Math.round(1000 * Math.exp(-km / 2000)));
+}
+
+// ── Round logic ───────────────────────────────────────────────────────────────
+function startRound() {
+  guessed = false;
+  if (guessMarker) { map.removeLayer(guessMarker); guessMarker = null; }
+  document.getElementById('confirm-btn').disabled = true;
+  document.getElementById('feedback').style.display = 'none';
+  document.getElementById('next-btn').style.display = 'none';
+
+  const place = chosen[round];
+  document.getElementById('place-name').innerHTML =
+    `${formatName(place.name)}<span>Click the map to place your pin</span>`;
+  document.getElementById('q-num').textContent = round + 1;
+  document.getElementById('round-label').textContent = `Round ${round + 1} / ${ROUNDS}`;
+  document.getElementById('progress-fill').style.width = `${(round / ROUNDS) * 100}%`;
+}
+
+document.getElementById('confirm-btn').addEventListener('click', () => {
+  if (!guessMarker || guessed) return;
+  guessed = true;
+  document.getElementById('confirm-btn').disabled = true;
+
+  const place = chosen[round];
+  const gLatLng = guessMarker.getLatLng();
+  const km = haversine(gLatLng.lat, gLatLng.lng, place.lat, place.lon);
+  const pts = calcScore(km);
+  totalScore += pts;
+  resultHistory.push({ name: formatName(place.name), km: Math.round(km), pts });
+
+  L.marker([place.lat, place.lon], { icon: answerIcon })
+    .addTo(map)
+    .bindPopup(`<strong>${formatName(place.name)}</strong><br>Actual location`)
+    .openPopup();
+
+  L.polyline([[gLatLng.lat, gLatLng.lng], [place.lat, place.lon]], {
+    color: '#f0c040', weight: 2, dashArray: '6,4', opacity: 0.7,
+  }).addTo(map);
+
+  map.fitBounds([[gLatLng.lat, gLatLng.lng], [place.lat, place.lon]], { padding: [60, 60] });
+
+  const fb = document.getElementById('feedback');
+  fb.innerHTML = `
+    <div class="dist">${Math.round(km).toLocaleString()} km away</div>
+    <div class="pts">+${pts} points</div>
+  `;
+  fb.style.display = 'block';
+  document.getElementById('total-score').textContent = totalScore.toLocaleString();
+
+  if (round < ROUNDS - 1) {
+    document.getElementById('next-btn').style.display = 'block';
+  } else {
+    setTimeout(showResults, 1800);
+  }
+});
+
+document.getElementById('next-btn').addEventListener('click', () => {
+  round++;
+  map.eachLayer(layer => {
+    if (layer instanceof L.Marker || layer instanceof L.Polyline) map.removeLayer(layer);
+  });
+  guessMarker = null;
+  map.setView([30, 25], 3);
+  startRound();
+});
+
+// ── Results ───────────────────────────────────────────────────────────────────
+let lastGrade = '';
+
+function showResults() {
+  document.getElementById('progress-fill').style.width = '100%';
+  const max = ROUNDS * 1000;
+  const pct = totalScore / max;
+  lastGrade = getGrade(pct);
+
+  // Save to leaderboard
+  addToLeaderboard(currentPlayerName, totalScore, lastGrade);
+
+  document.getElementById('result-player-name').textContent = currentPlayerName;
+  document.getElementById('final-score-val').textContent = totalScore.toLocaleString() + ' / ' + max.toLocaleString();
+  document.getElementById('grade-text').textContent = lastGrade;
+
+  const tbody = document.getElementById('results-tbody');
+  tbody.innerHTML = resultHistory.map(r => `
+    <tr>
+      <td>${r.name}</td>
+      <td>${r.km.toLocaleString()} km</td>
+      <td style="color:#7ded7d">+${r.pts}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('results').classList.add('show');
+}
+
+// ── Leaderboard overlay ───────────────────────────────────────────────────────
+function showLeaderboard() {
+  const lb = loadLeaderboard();
+  document.getElementById('lb-tbody').innerHTML = renderLbTable(lb, currentPlayerName, totalScore);
+  document.getElementById('leaderboard').classList.add('show');
+}
+
+document.getElementById('view-lb-btn').addEventListener('click', showLeaderboard);
+
+document.getElementById('lb-close-btn').addEventListener('click', () => {
+  document.getElementById('leaderboard').classList.remove('show');
+});
+
+document.getElementById('clear-lb-btn').addEventListener('click', () => {
+  if (confirm('Clear the entire leaderboard?')) {
+    saveLeaderboard([]);
+    document.getElementById('lb-tbody').innerHTML = renderLbTable([], '', 0);
+  }
+});
+
+document.getElementById('play-again-btn').addEventListener('click', () => {
+  // Reset game state
+  round = 0;
+  totalScore = 0;
+  resultHistory = [];
+  guessed = false;
+  guessMarker = null;
+  document.getElementById('results').classList.remove('show');
+  document.getElementById('total-score').textContent = '0';
+  document.getElementById('progress-fill').style.width = '0%';
+  map.eachLayer(layer => {
+    if (layer instanceof L.Marker || layer instanceof L.Polyline) map.removeLayer(layer);
+  });
+  map.setView([30, 25], 3);
+
+  // Show name entry again with updated leaderboard
+  renderLbPreview();
+  nameInput.value = '';
+  startBtn.disabled = true;
+  document.getElementById('name-entry').style.display = 'flex';
+});
+</script>
+</body>
+</html>
