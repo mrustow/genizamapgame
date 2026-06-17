@@ -165,13 +165,6 @@
     transition: background 0.2s;
   }
   #lb-close-btn:hover { background: #3a2a10; }
-  #clear-lb-btn {
-    background: transparent; color: #5a4010; border: 1px solid #3a2a10;
-    border-radius: 6px; padding: 6px 14px; font-size: 0.8rem;
-    font-family: 'Georgia', serif; cursor: pointer;
-  }
-  #clear-lb-btn:hover { color: #c86060; border-color: #c86060; }
-
   #map { flex: 1; }
   .guess-pin { background: #f0c040; width: 16px; height: 16px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid #1a1208; }
   .answer-pin { background: #7ded7d; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #1a1208; }
@@ -233,7 +226,6 @@
   </table>
   <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center">
     <button id="lb-close-btn">← Back</button>
-    <button id="clear-lb-btn">Clear leaderboard</button>
   </div>
 </div>
 
@@ -403,25 +395,45 @@ for (const line of lines) {
   }
 }
 
-// ── Leaderboard storage ───────────────────────────────────────────────────────
-const LB_KEY = 'geniza_leaderboard_v1';
+// ── Leaderboard storage (Supabase) ───────────────────────────────────────────
+const SUPABASE_URL = 'https://tgywpqbqdtgtaemzcwsu.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_PTHnYPJ3Cne1b3mIDj979A_ip8c0i_K';
 
-function loadLeaderboard() {
-  try { return JSON.parse(localStorage.getItem(LB_KEY) || '[]'); }
-  catch { return []; }
+async function loadLeaderboard() {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/leaderboard?select=name,score,grade,date&order=score.desc&limit=50`,
+      {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+        },
+      }
+    );
+    if (!res.ok) throw new Error('Failed to load leaderboard');
+    return await res.json();
+  } catch (err) {
+    console.error('Leaderboard load error:', err);
+    return [];
+  }
 }
 
-function saveLeaderboard(lb) {
-  localStorage.setItem(LB_KEY, JSON.stringify(lb));
-}
-
-function addToLeaderboard(name, score, grade) {
-  const lb = loadLeaderboard();
-  lb.push({ name, score, grade, date: new Date().toLocaleDateString() });
-  lb.sort((a, b) => b.score - a.score);
-  if (lb.length > 50) lb.length = 50; // cap at 50 entries
-  saveLeaderboard(lb);
-  return lb;
+async function addToLeaderboard(name, score, grade) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({ name, score, grade, date: new Date().toLocaleDateString() }),
+    });
+    if (!res.ok) throw new Error('Failed to save score');
+  } catch (err) {
+    console.error('Leaderboard save error:', err);
+  }
 }
 
 function getGrade(pct) {
@@ -452,9 +464,10 @@ function renderLbTable(lb, currentName, currentScore) {
 // ── Name entry ────────────────────────────────────────────────────────────────
 let currentPlayerName = '';
 
-function renderLbPreview() {
-  const lb = loadLeaderboard();
+async function renderLbPreview() {
   const el = document.getElementById('lb-preview');
+  el.innerHTML = '<p style="text-align:center;color:#5a4010;font-style:italic">Loading leaderboard…</p>';
+  const lb = await loadLeaderboard();
   if (lb.length === 0) { el.innerHTML = ''; return; }
   const top5 = lb.slice(0, 5);
   el.innerHTML = `<h3>🏆 Leaderboard</h3>
@@ -625,14 +638,11 @@ document.getElementById('next-btn').addEventListener('click', () => {
 // ── Results ───────────────────────────────────────────────────────────────────
 let lastGrade = '';
 
-function showResults() {
+async function showResults() {
   document.getElementById('progress-fill').style.width = '100%';
   const max = ROUNDS * 1000;
   const pct = totalScore / max;
   lastGrade = getGrade(pct);
-
-  // Save to leaderboard
-  addToLeaderboard(currentPlayerName, totalScore, lastGrade);
 
   document.getElementById('result-player-name').textContent = currentPlayerName;
   document.getElementById('final-score-val').textContent = totalScore.toLocaleString() + ' / ' + max.toLocaleString();
@@ -648,26 +658,23 @@ function showResults() {
   `).join('');
 
   document.getElementById('results').classList.add('show');
+
+  // Save to shared leaderboard (don't block the results screen on this)
+  addToLeaderboard(currentPlayerName, totalScore, lastGrade);
 }
 
 // ── Leaderboard overlay ───────────────────────────────────────────────────────
-function showLeaderboard() {
-  const lb = loadLeaderboard();
-  document.getElementById('lb-tbody').innerHTML = renderLbTable(lb, currentPlayerName, totalScore);
+async function showLeaderboard() {
+  document.getElementById('lb-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#5a4010;font-style:italic">Loading…</td></tr>';
   document.getElementById('leaderboard').classList.add('show');
+  const lb = await loadLeaderboard();
+  document.getElementById('lb-tbody').innerHTML = renderLbTable(lb, currentPlayerName, totalScore);
 }
 
 document.getElementById('view-lb-btn').addEventListener('click', showLeaderboard);
 
 document.getElementById('lb-close-btn').addEventListener('click', () => {
   document.getElementById('leaderboard').classList.remove('show');
-});
-
-document.getElementById('clear-lb-btn').addEventListener('click', () => {
-  if (confirm('Clear the entire leaderboard?')) {
-    saveLeaderboard([]);
-    document.getElementById('lb-tbody').innerHTML = renderLbTable([], '', 0);
-  }
 });
 
 document.getElementById('play-again-btn').addEventListener('click', () => {
